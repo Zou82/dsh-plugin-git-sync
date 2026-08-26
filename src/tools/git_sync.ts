@@ -14,16 +14,16 @@ import {
 } from "../git/ops.js";
 import { GitError } from "../git/runner.js";
 import { ProjectStateStore } from "../state/store.js";
+import { getRuntimeConfig } from "../state/config-runtime.js";
 import { resolveIdentity } from "../git/identity.js";
 import { askUser, type Ctx } from "../types.js";
-import type { Config } from "../config.js";
 
 /**
  * git_sync — commit and push the current changes.
  * The agent calls this after each round of code changes; the turn-end hook
  * (lifecycle/turn-end-sync) is the safety net when the agent misses it.
  */
-export function registerGitSync(ctx: Ctx, config: Config): void {
+export function registerGitSync(ctx: Ctx): void {
   ctx.tools.register(
     defineTool({
       name: "git_sync",
@@ -73,6 +73,7 @@ export function registerGitSync(ctx: Ctx, config: Config): void {
         ],
       },
       async execute(args: any, exec: any): Promise<any> {
+        const config = getRuntimeConfig();
         const cwd = args.cwd ?? exec.cwd ?? process.cwd();
         const state = new ProjectStateStore(cwd);
 
@@ -177,7 +178,7 @@ async function pushPending(
   ctx: Ctx,
   cwd: string,
   token: string,
-  config: Config,
+  config: ReturnType<typeof getRuntimeConfig>,
   state: ProjectStateStore,
   changed: number,
   commits: Array<{ hash: string; message: string }> = [],

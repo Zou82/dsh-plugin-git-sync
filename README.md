@@ -77,11 +77,11 @@ pnpm add /path/to/dsh-plugin-git-sync-<version>.tgz
 
 ## 配置
 
-插件有两类配置：**GitHub 令牌**（凭据）和**插件设置**。两者都可以在 DSH 的设置 UI 中修改，也支持直接编辑文件。
+插件有两类配置：**GitHub 令牌**（凭据）和**插件设置**。两者都可以在 **DSH 设置界面**里改（**设置 → 插件 → 插件配置 → GitHub 同步** 卡片，0.2.0 起内置），也支持直接编辑文件，效果相同且**实时生效**（无需重启）。
 
 ### 1. 配置 GitHub 令牌（必须）
 
-**位置**：`~/.dsh/.credentials.yaml`（DSH 凭据文件）
+**位置**：`~/.dsh/.credentials.yaml`（DSH 凭据文件），或在上述设置卡片中直接填写（令牌只写不读，不出现在界面上）。
 
 在 `refs:` 下添加一行：
 
@@ -103,7 +103,7 @@ refs:
 
 ### 2. 配置插件设置（可选，有默认值）
 
-**位置**：`~/.dsh/settings.yaml` 的 `git-sync:` 段（或在 DSH 设置 UI 中编辑，效果相同）
+**位置**：DSH 设置界面 → 插件 → 插件配置 → **GitHub 同步**卡片；或 `~/.dsh/settings.yaml` 的 `git-sync:` 段（二者等价，实时生效）
 
 ```yaml
 git-sync:

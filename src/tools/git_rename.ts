@@ -10,8 +10,8 @@ import {
 import { resolveToken } from "../github/token.js";
 import { hasRepo, setRemoteUrl } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
+import { getRuntimeConfig } from "../state/config-runtime.js";
 import { askUser, type Ctx } from "../types.js";
-import type { Config } from "../config.js";
 
 /**
  * git_rename — change the GitHub repository name after creation.
@@ -19,7 +19,7 @@ import type { Config } from "../config.js";
  * on GitHub, rewires the local remote, and updates project state. GitHub
  * keeps the old URL working via 301 redirect.
  */
-export function registerGitRename(ctx: Ctx, config: Config): void {
+export function registerGitRename(ctx: Ctx): void {
   ctx.tools.register(
     defineTool({
       name: "git_rename",
@@ -53,6 +53,7 @@ export function registerGitRename(ctx: Ctx, config: Config): void {
         ],
       },
       async execute(args: any, exec: any): Promise<any> {
+        const config = getRuntimeConfig();
         const cwd = args.cwd ?? exec.cwd ?? process.cwd();
         const state = new ProjectStateStore(cwd);
         const current = await state.load();

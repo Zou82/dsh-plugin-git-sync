@@ -12,7 +12,7 @@ import {
 import { ProjectStateStore } from "../state/store.js";
 import { resolveIdentity } from "../git/identity.js";
 import { askUser, type Ctx } from "../types.js";
-import type { Config } from "../config.js";
+import { getRuntimeConfig } from "../state/config-runtime.js";
 
 /**
  * Turn-end fallback sync: after each agent turn, if the workspace is a
@@ -24,12 +24,13 @@ import type { Config } from "../config.js";
  * not a single array payload. TODO(verify): how to obtain the session's
  * workspace path.
  */
-export function registerTurnEndSync(ctx: Ctx, config: Config): void {
+export function registerTurnEndSync(ctx: Ctx): void {
   ctx.on("session/event", (session: unknown, event: unknown) => {
     if ((event as { type?: string } | null)?.type !== "turn/end") return;
 
     void (async () => {
       try {
+        const config = getRuntimeConfig();
         if (config.autoSync === false) return;
         const cwd = resolveSessionCwd(session);
         if (!cwd) return;

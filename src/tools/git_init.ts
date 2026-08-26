@@ -21,16 +21,16 @@ import {
   push,
 } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
+import { getRuntimeConfig } from "../state/config-runtime.js";
 import { resolveIdentity } from "../git/identity.js";
 import { askUser, type Ctx } from "../types.js";
-import type { Config } from "../config.js";
 
 /**
  * git_init — start a project repo: ask the user whether to create a GitHub
  * repository, confirm the repo name (user may type their own), then init
  * locally, create remotely, and push the initial commit.
  */
-export function registerGitInit(ctx: Ctx, config: Config): void {
+export function registerGitInit(ctx: Ctx): void {
   ctx.tools.register(
     defineTool({
       name: "git_init",
@@ -77,6 +77,7 @@ export function registerGitInit(ctx: Ctx, config: Config): void {
         ],
       },
       async execute(args: any, exec: any): Promise<any> {
+        const config = getRuntimeConfig();
         const cwd = resolveCwd(args.cwd, exec);
         const state = new ProjectStateStore(cwd);
 

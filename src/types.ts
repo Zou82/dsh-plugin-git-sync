@@ -55,6 +55,19 @@ export interface Ctx {
       signal?: AbortSignal;
     }): Promise<{ answers: QuestionAnswer[] }>;
   };
+  /** dsh-settings: register the user-editable "git-sync" namespace. */
+  settings: {
+    register(
+      ns: string,
+      schema: unknown,
+      options?: { base?: unknown; applies?: string; validate?: unknown },
+    ): {
+      get(): unknown;
+      watch(callback: () => void): () => void;
+      update(patch: Record<string, unknown>): Promise<unknown>;
+      replace(section: Record<string, unknown>): Promise<unknown>;
+    };
+  };
   /** TODO(verify): dsh-agent-instructions seam, if composed. */
   agentInstructions?: { register?(text: string): unknown };
 }
