@@ -23,7 +23,7 @@ import {
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 import { resolveIdentity } from "../git/identity.js";
-import { askUser, type Ctx } from "../types.js";
+import { askUser, resolveWorkspaceCwd, type Ctx } from "../types.js";
 
 /**
  * git_init — start a project repo: ask the user whether to create a GitHub
@@ -78,7 +78,7 @@ export function registerGitInit(ctx: Ctx): void {
       },
       async execute(args: any, exec: any): Promise<any> {
         const config = getRuntimeConfig();
-        const cwd = resolveCwd(args.cwd, exec);
+        const cwd = resolveWorkspaceCwd(args.cwd, exec);
         const state = new ProjectStateStore(cwd);
 
         if (!(await isGitAvailable())) {
@@ -268,11 +268,4 @@ export function registerGitInit(ctx: Ctx): void {
       },
     }),
   );
-}
-
-/** TODO(verify): the runtime's canonical way to obtain the session workspace. */
-function resolveCwd(explicit: string | undefined, exec: { cwd?: string }): string {
-  if (explicit) return explicit;
-  if (exec.cwd) return exec.cwd;
-  return process.cwd();
 }

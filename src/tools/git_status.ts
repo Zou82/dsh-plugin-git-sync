@@ -9,7 +9,7 @@ import {
 } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
-import type { Ctx } from "../types.js";
+import { resolveWorkspaceCwd, type Ctx } from "../types.js";
 
 /**
  * git_status — inspect the current sync state of the workspace.
@@ -53,7 +53,7 @@ export function registerGitStatus(ctx: Ctx): void {
       },
       async execute(args: any, _exec: any): Promise<any> {
         const config = getRuntimeConfig();
-        const cwd = args.cwd ?? process.cwd();
+        const cwd = resolveWorkspaceCwd(args.cwd, _exec);
         if (!(await hasRepo(cwd))) {
           return { is_repo: false, reason: "工作区不是 git 仓库（可调用 git_init 建仓）" };
         }

@@ -11,7 +11,7 @@ import { resolveToken } from "../github/token.js";
 import { hasRepo, setRemoteUrl } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
-import { askUser, type Ctx } from "../types.js";
+import { askUser, resolveWorkspaceCwd, type Ctx } from "../types.js";
 
 /**
  * git_rename — change the GitHub repository name after creation.
@@ -54,7 +54,7 @@ export function registerGitRename(ctx: Ctx): void {
       },
       async execute(args: any, exec: any): Promise<any> {
         const config = getRuntimeConfig();
-        const cwd = args.cwd ?? exec.cwd ?? process.cwd();
+        const cwd = resolveWorkspaceCwd(args.cwd, exec);
         const state = new ProjectStateStore(cwd);
         const current = await state.load();
 

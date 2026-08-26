@@ -11,7 +11,7 @@ import {
 } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
 import { resolveIdentity } from "../git/identity.js";
-import { askUser, type Ctx } from "../types.js";
+import { askUser, sessionWorkspaceCwd, type Ctx } from "../types.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 
 /**
@@ -32,7 +32,7 @@ export function registerTurnEndSync(ctx: Ctx): void {
       try {
         const config = getRuntimeConfig();
         if (config.autoSync === false) return;
-        const cwd = resolveSessionCwd(session);
+        const cwd = sessionWorkspaceCwd(session);
         if (!cwd) return;
         if (!(await hasRepo(cwd))) return;
 
@@ -80,11 +80,4 @@ export function registerTurnEndSync(ctx: Ctx): void {
       }
     })();
   });
-}
-
-/** TODO(verify): canonical session -> workspace path resolution. */
-function resolveSessionCwd(session: unknown): string | undefined {
-  const s = session as { workspace?: string; cwd?: string };
-  const cwd = s?.workspace ?? s?.cwd;
-  return typeof cwd === "string" ? cwd : undefined;
 }

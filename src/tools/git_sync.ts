@@ -16,7 +16,7 @@ import { GitError } from "../git/runner.js";
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 import { resolveIdentity } from "../git/identity.js";
-import { askUser, type Ctx } from "../types.js";
+import { askUser, resolveWorkspaceCwd, type Ctx } from "../types.js";
 
 /**
  * git_sync — commit and push the current changes.
@@ -74,7 +74,7 @@ export function registerGitSync(ctx: Ctx): void {
       },
       async execute(args: any, exec: any): Promise<any> {
         const config = getRuntimeConfig();
-        const cwd = args.cwd ?? exec.cwd ?? process.cwd();
+        const cwd = resolveWorkspaceCwd(args.cwd, exec);
         const state = new ProjectStateStore(cwd);
 
         if (!(await hasRepo(cwd))) {

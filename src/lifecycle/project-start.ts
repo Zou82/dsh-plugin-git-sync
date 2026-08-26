@@ -2,20 +2,18 @@ import { readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { hasRepoSync } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
-import type { Ctx } from "../types.js";
+import { sessionWorkspaceCwd, type Ctx } from "../types.js";
 
 /**
  * Mark "pending init" when a session starts in an empty, repo-less directory.
  * Best-effort advisory: the real ask happens in git_init (agent-driven),
- * guided by the injected instructions. TODO(verify): the exact shape of the
- * session event payload (workspace path source).
+ * guided by the injected instructions.
  */
 export function registerProjectStart(ctx: Ctx): void {
   ctx.on("session/created", (payload: unknown) => {
     try {
-      const session = payload as { workspace?: string; cwd?: string };
-      const cwd = session?.workspace ?? session?.cwd;
-      if (!cwd || typeof cwd !== "string") return;
+      const cwd = sessionWorkspaceCwd(payload);
+      if (!cwd) return;
       if (hasRepoSync(cwd)) return;
 
       void (async () => {

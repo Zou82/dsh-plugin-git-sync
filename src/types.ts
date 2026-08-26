@@ -11,11 +11,45 @@
 /** Tool execution context passed to defineTool's execute(args, exec). */
 export interface ToolExec {
   /** The live calling agent (required for human interaction validation). */
-  agent?: unknown;
+  agent?: {
+    /** The agent's session; its header carries the session workspace cwd. */
+    session?: { header?: { cwd?: string } };
+  };
   /** Abort signal for the current tool call. */
   signal?: AbortSignal;
-  /** TODO(verify): whether the runtime exposes the workspace/cwd here. */
-  cwd?: string;
+}
+
+/**
+ * Resolve the session workspace from a tool exec context — the same source
+ * the built-in bash tool uses (`exec.agent.session.header.cwd`). The exec
+ * context has NO top-level cwd field; falling back to process.cwd() would
+ * point at the host process directory instead of the user's project.
+ */
+export function execSessionCwd(exec: unknown): string | undefined {
+  const agent = (exec as ToolExec | undefined)?.agent;
+  const cwd = agent?.session?.header?.cwd;
+  return typeof cwd === "string" && cwd.length > 0 ? cwd : undefined;
+}
+
+/** Resolve the effective working directory: explicit arg > session cwd > cwd. */
+export function resolveWorkspaceCwd(explicit: string | undefined, exec: unknown): string {
+  if (explicit && explicit.length > 0) return explicit;
+  const sessionCwd = execSessionCwd(exec);
+  if (sessionCwd !== undefined) return sessionCwd;
+  return process.cwd();
+}
+
+/**
+ * Resolve the workspace path from a session object seen in lifecycle hooks
+ * (`session/created`, `session/event`). The session entity carries its
+ * creation cwd in `header.cwd`.
+ */
+export function sessionWorkspaceCwd(session: unknown): string | undefined {
+  const s = session as { header?: { cwd?: string }; cwd?: string } | null;
+  const headerCwd = s?.header?.cwd;
+  if (typeof headerCwd === "string" && headerCwd.length > 0) return headerCwd;
+  const cwd = s?.cwd;
+  return typeof cwd === "string" && cwd.length > 0 ? cwd : undefined;
 }
 
 /** One question sent to the human via ctx.userQuestions. */
