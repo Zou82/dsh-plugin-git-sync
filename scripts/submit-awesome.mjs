@@ -122,7 +122,6 @@ const gitEnv = {
   GIT_CONFIG_KEY_2: "http.sslVerify",
   GIT_CONFIG_VALUE_2: "false",
 };
-const { tmpdir } = await import("node:os");
 const work = mkdtempSync(join(tmpdir(), "awesome-submit-"));
 const run = (args, opts = {}) => execFileSync("git", args, { env: gitEnv, stdio: "inherit", ...opts });
 try {
