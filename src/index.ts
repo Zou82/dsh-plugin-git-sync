@@ -7,6 +7,7 @@ import { registerGitSync } from "./tools/git_sync.js";
 import { registerGitStatus } from "./tools/git_status.js";
 import { registerProjectStart } from "./lifecycle/project-start.js";
 import { registerTurnEndSync } from "./lifecycle/turn-end-sync.js";
+import { registerFileWatcher } from "./lifecycle/file-watcher.js";
 import { AGENT_INSTRUCTIONS } from "./prompts/instructions.js";
 import type { Ctx } from "./types.js";
 
@@ -50,6 +51,7 @@ export function apply(ctx: Ctx, config: Config): void {
   registerGitStatus(ctx);
   registerProjectStart(ctx);
   registerTurnEndSync(ctx);
+  registerFileWatcher(ctx);
 
   // Inject agent instructions (best-effort; TODO(verify) seam availability).
   try {

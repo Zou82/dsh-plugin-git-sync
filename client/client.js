@@ -365,7 +365,12 @@ window.__ModuleLoader__.load({
               { value: true, labelKey: 'enabled' },
               { value: false, labelKey: 'disabled' }
             ]),
-            numberField('safety.maxFileSizeMb', ['safety', 'maxFileSizeMb'])
+            numberField('safety.maxFileSizeMb', ['safety', 'maxFileSizeMb']),
+            choiceField('fileWatcher.enabled', ['fileWatcher', 'enabled'], [
+              { value: true, labelKey: 'enabled' },
+              { value: false, labelKey: 'disabled' }
+            ]),
+            numberField('fileWatcher.debounceMs', ['fileWatcher', 'debounceMs'])
           ],
           [{
             id: 'token',
@@ -382,7 +387,8 @@ window.__ModuleLoader__.load({
         var ids = ['token', 'github.username', 'github.visibility', 'github.defaultBranch',
           'github.insecureTls', 'auth.method', 'git.committerName', 'git.committerEmail',
           'autoSync', 'askBeforeInit', 'init.createGitignore', 'init.initialCommitMessage',
-          'safety.scanForSecrets', 'safety.maxFileSizeMb'];
+          'safety.scanForSecrets', 'safety.maxFileSizeMb',
+          'fileWatcher.enabled', 'fileWatcher.debounceMs'];
         for (var i = 0; i < ids.length; i++) fields[ids[i]] = this.form.field(ids[i]);
         return {
           ...this.form.shell(),
@@ -589,6 +595,17 @@ window.__ModuleLoader__.load({
                 ...state['safety.maxFileSizeMb'],
                 onEdit: function (v) { props.edit('safety.maxFileSizeMb', v); },
                 onReset: function () { props.resetField('safety.maxFileSizeMb'); } }),
+              jsx.jsx(ChoiceField, { id: 'gs-watch-files', label: t('fileWatcherLabel'), hint: t('fileWatcherHint'),
+                overriddenLabel: t('overridden'), resetLabel: t('reset'), disabled: !state.writable, t: t,
+                field: state['fileWatcher.enabled'],
+                onEdit: function (v) { props.edit('fileWatcher.enabled', v); },
+                onReset: function () { props.resetField('fileWatcher.enabled'); } }),
+              jsx.jsx(ValueField, { id: 'gs-debounce', label: t('debounceLabel'), hint: t('debounceHint'),
+                overriddenLabel: t('overridden'), resetLabel: t('reset'), invalidLabel: t('invalidNumber'),
+                numeric: true, disabled: !state.writable,
+                ...state['fileWatcher.debounceMs'],
+                onEdit: function (v) { props.edit('fileWatcher.debounceMs', v); },
+                onReset: function () { props.resetField('fileWatcher.debounceMs'); } }),
               state.failed ? jsx.jsx('p', { className: 'gs-failed', role: 'status', children: t('saveFailed') }) : null,
               jsx.jsxs('div', { className: 'gs-footer', children: [
                 jsx.jsx('button', { type: 'button', className: 'gs-discard', disabled: !state.dirty || state.saving,
@@ -635,6 +652,10 @@ window.__ModuleLoader__.load({
       scanSecretsHint: 'Block commits containing sensitive files (.env, keys, ...).',
       maxSizeLabel: 'Large-file warning (MB)',
       maxSizeHint: 'Files above this size ask before commit (GitHub limit 100MB).',
+      fileWatcherLabel: 'File watcher (save = sync)',
+      fileWatcherHint: 'Auto commit+push when files change; ignores .git/node_modules (needs auto-sync on).',
+      debounceLabel: 'Debounce (ms)',
+      debounceHint: 'Wait after the last change before syncing.',
       private: 'Private', public: 'Public', enabled: 'Enabled', disabled: 'Disabled',
       extraheader: 'extraheader', askpass: 'askpass', ask: 'Ask',
       overridden: 'Overridden', reset: 'Reset to default', readOnly: 'This deployment stores settings read-only.',
@@ -676,6 +697,10 @@ window.__ModuleLoader__.load({
       scanSecretsHint: '阻止提交包含敏感文件（.env、密钥等）的变更。',
       maxSizeLabel: '大文件告警（MB）',
       maxSizeHint: '超过该大小的文件提交前会询问（GitHub 上限 100MB）。',
+      fileWatcherLabel: '文件监听（保存即同步）',
+      fileWatcherHint: '文件变化后自动提交推送；忽略 .git/node_modules（需开启自动同步）。',
+      debounceLabel: '防抖（毫秒）',
+      debounceHint: '最后一次变化后等待多久再同步。',
       private: '私有', public: '公开', enabled: '启用', disabled: '禁用',
       extraheader: 'extraheader', askpass: 'askpass', ask: '询问',
       overridden: '已覆盖', reset: '重置为默认', readOnly: '此部署的设置只读。',

@@ -17,6 +17,7 @@
 - `git_sync`：提交并推送（自动 `pull --rebase`，冲突停下交给你，**绝不 force push**）
 - `git_status`：查看同步状态（分支 / 远端 / 前后端差异 / 未提交文件）
 - 回合结束兜底自动同步（`autoSync` 可配 `true` / `false` / `"ask"`）
+- **文件监听（保存即同步）**：工作区文件一变化（保存/编辑）就自动提交推送，不再只等回合结束（可配防抖毫秒，忽略 `.git`/`node_modules`）
 - 提交前敏感文件扫描（`.env`、密钥等）、大文件告警
 - 自动设置 git 提交身份（repo-local，不动全局配置）
 
@@ -145,6 +146,8 @@ git-sync:
 | `init.initialCommitMessage` | `chore: initial commit` | 首次提交信息 |
 | `safety.scanForSecrets` | `true` | 敏感文件扫描 |
 | `safety.maxFileSizeMb` | `50` | 大文件告警阈值 |
+| `fileWatcher.enabled` | `true` | 文件监听：保存文件后自动提交推送（需 `autoSync: true`；忽略 `.git`/`node_modules`） |
+| `fileWatcher.debounceMs` | `1500` | 连续变化的防抖毫秒数（合并一次编辑为一次同步） |
 
 ---
 

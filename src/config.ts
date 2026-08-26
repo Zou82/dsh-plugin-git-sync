@@ -53,6 +53,18 @@ const ConfigSchema = z.object({
       "回合结束兜底：true=自动提交推送 / false=仅 agent 调用 git_sync 时同步 / ask=有变更时询问用户",
     ),
 
+  // File watcher: commit + push on every file change (save), not only at turn end
+  fileWatcher: z.object({
+    enabled: z
+      .boolean()
+      .default(true)
+      .description("监听工作区文件变化：保存文件后自动提交推送（需 autoSync: true；忽略 .git/node_modules 等目录）"),
+    debounceMs: z
+      .number()
+      .default(1500)
+      .description("连续变化后的防抖等待毫秒数（合并一次编辑为一次同步）"),
+  }),
+
   askBeforeInit: z
     .boolean()
     .default(true)
@@ -94,6 +106,10 @@ export type Config = {
     committerEmail: string;
   };
   autoSync: true | false | "ask";
+  fileWatcher: {
+    enabled: boolean;
+    debounceMs: number;
+  };
   askBeforeInit: boolean;
   init: {
     createGitignore: boolean;
