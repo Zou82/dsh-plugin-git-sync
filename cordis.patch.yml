@@ -1,0 +1,21 @@
+# dsh bundle patch: mounts the git-sync plugin into the host composition of a
+# dsh profile. The plugin registers the git_init / git_sync / git_rename /
+# git_status tools into the shared `tools` registry and the turn-end / project
+# start lifecycle hooks, so every session of the profile can drive Git +
+# GitHub automation through the agent.
+#
+# Plugin settings can be provided here (config) or through DSH settings
+# (settings.yaml / the settings UI). Example:
+#
+#   - insert:
+#       - id: git-sync
+#         name: 'dsh-plugin-git-sync'
+#         config:
+#           github:
+#             username: your-github-username
+#             insecureTls: false
+#           askBeforeInit: true
+#           autoSync: true
+- insert:
+    - id: git-sync
+      name: 'dsh-plugin-git-sync'

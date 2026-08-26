@@ -1,0 +1,17 @@
+# build output
+lib/
+
+# npm / pnpm artifacts
+node_modules/
+.npm-cache/
+*.tgz
+
+# plugin runtime state (also ignored by the plugin itself in user projects)
+.dsh-git-sync/
+
+# smoke-test token file (deleted after the run)
+.smoke-token
+
+# misc
+*.log
+debug.log
