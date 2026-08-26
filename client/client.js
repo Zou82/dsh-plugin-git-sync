@@ -59,7 +59,9 @@ window.__ModuleLoader__.load({
         '.gs-save:disabled{opacity:.5;cursor:default}',
         '.gs-discard{background:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:6px 14px;font:inherit;font-size:13px;color:var(--dsw-alias-label-secondary);cursor:pointer}',
         '.gs-discard:disabled{opacity:.5;cursor:default}',
-        '.gs-failed{color:var(--dsw-alias-label-error);font-size:12px;margin:0 0 8px}'
+        '.gs-failed{color:var(--dsw-alias-label-error);font-size:12px;margin:0 0 8px}',
+        '.gs-chevron{width:12px;height:12px;flex:none;border-right:2px solid var(--dsw-alias-label-secondary);border-bottom:2px solid var(--dsw-alias-label-secondary);transform:rotate(45deg);transition:transform .18s ease;opacity:.7}',
+        '.gs-chevronOpen{transform:rotate(225deg)}'
       ].join('');
       var tag = document.createElement('style');
       tag.dataset.plugin = 'dsh-plugin-git-sync';
@@ -491,21 +493,31 @@ window.__ModuleLoader__.load({
     function GitSyncCard(props) {
       var t = props.t;
       var state = props.useGitSyncCard(function (snapshot) { return snapshot; });
+      var openState = React.useState(false);
+      var open = openState[0];
+      var setOpen = openState[1];
       if (!state.available) return null;
       var blocked = !state.dirty || state.invalid || state.saving;
+      var title = t('gitSyncTitle');
       return jsx.jsx('li', {
         className: 'gs-card',
-        children: jsx.jsx('div', {
-          children: jsx.jsxs('div', { children: [
-            jsx.jsx('button', {
-              type: 'button',
-              className: 'gs-header',
-              children: jsx.jsxs('span', { className: 'gs-headText', children: [
-                jsx.jsx('span', { className: 'gs-name', children: t('gitSyncTitle') }),
+        children: jsx.jsxs('div', { children: [
+          jsx.jsxs('button', {
+            type: 'button',
+            className: 'gs-header',
+            'aria-expanded': open,
+            'aria-label': t(open ? 'collapse' : 'expand') + ': ' + title,
+            onClick: function () { setOpen(!open); },
+            children: [
+              jsx.jsxs('span', { className: 'gs-headText', children: [
+                jsx.jsx('span', { className: 'gs-name', children: title }),
                 jsx.jsx('span', { className: 'gs-desc', children: t('gitSyncDescription') })
-              ] })
-            }),
-            jsx.jsxs('div', { className: 'gs-body', children: [
+              ] }),
+              state.dirty ? jsx.jsx('span', { className: 'gs-pending', children: t('unsaved') }) : null,
+              jsx.jsx('span', { className: open ? 'gs-chevron gs-chevronOpen' : 'gs-chevron' })
+            ]
+          }),
+          open ? jsx.jsxs('div', { className: 'gs-body', children: [
               !state.writable ? jsx.jsx('p', { className: 'gs-readonly', role: 'status', children: t('readOnly') }) : null,
               jsx.jsx(SecretField, { id: 'gs-token', label: t('tokenLabel'), hint: t('tokenHint'),
                 stateLabel: state.tokenConfigured ? t('tokenSet') : t('tokenUnset'),
@@ -584,9 +596,8 @@ window.__ModuleLoader__.load({
                 jsx.jsx('button', { type: 'button', className: 'gs-save', disabled: blocked,
                   onClick: props.save, children: t(state.saving ? 'saving' : 'save') })
               ] })
-            ] })
+            ] }) : null
           ] })
-        })
       });
     }
 
@@ -629,7 +640,8 @@ window.__ModuleLoader__.load({
       overridden: 'Overridden', reset: 'Reset to default', readOnly: 'This deployment stores settings read-only.',
       save: 'Save', saving: 'Saving…', discard: 'Discard', unsaved: 'Unsaved',
       saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
-      invalidNumber: 'Enter a number, or leave blank to use the default.'
+      invalidNumber: 'Enter a number, or leave blank to use the default.',
+      expand: 'Show settings', collapse: 'Hide settings'
     };
     var zh = {
       gitSyncTitle: 'GitHub 同步',
@@ -669,7 +681,8 @@ window.__ModuleLoader__.load({
       overridden: '已覆盖', reset: '重置为默认', readOnly: '此部署的设置只读。',
       save: '保存', saving: '保存中…', discard: '放弃', unsaved: '未保存',
       saveFailed: '此部署未接受这些值；已保留供你修改。',
-      invalidNumber: '请输入数字，或留空使用默认值。'
+      invalidNumber: '请输入数字，或留空使用默认值。',
+      expand: '展开设置', collapse: '收起设置'
     };
 
     // ---- plugin entry ----
