@@ -14,7 +14,7 @@
 
 - `git_init`：询问建仓 → 确认/自定义仓库名（冲突自动建议 `name-2`）→ 本地 `git init` + GitHub 建仓 + 首次提交推送；**已有 git 仓库**也可一键关联到 GitHub（建仓 + remote + 推送现有内容）
 - `git_rename`：**建仓后改名**（GitHub 改名 + 本地 remote 同步 + 状态更新，旧链接 301 重定向）
-- `git_sync`：提交并推送（自动 `pull --rebase`，**冲突时列出冲突文件清单**并停下交给你，绝不 force push；支持 `create_branch` 任务分支）
+- `git_sync`：提交并推送（自动 `pull --rebase`，**冲突时列出冲突文件清单**并停下交给你，绝不 force push；支持 `create_branch` 任务分支与 `include` 定向提交）
 - `git_status`：查看同步状态（分支 / 远端 / 前后端差异 / 未提交文件）
 - 回合结束兜底自动同步（`autoSync` 可配 `true` / `false` / `"ask"`）
 - **文件监听（保存即同步）**：工作区文件一变化就自动提交推送（可配防抖毫秒、**自定义忽略规则**；`fs.watch` 不可用时自动**轮询回退**）

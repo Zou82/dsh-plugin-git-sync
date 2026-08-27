@@ -9,8 +9,16 @@ const API = "https://api.github.com";
 
 /** Lazy undici Agent used only when github.insecureTls is enabled. */
 let insecureAgent: unknown;
-async function getInsecureAgent() {
-  if (isInsecureTls() && insecureAgent === undefined) {
+
+/**
+ * Resolve the fetch dispatcher. Returns undefined both when insecure TLS is
+ * off and when the undici import failed — in that case callers must fall
+ * back to the default (verifying) TLS stack instead of spreading a null
+ * dispatcher into fetch init.
+ */
+async function getInsecureAgent(): Promise<unknown | undefined> {
+  if (!isInsecureTls()) return undefined;
+  if (insecureAgent === undefined) {
     try {
       const { Agent } = await import("undici");
       insecureAgent = new Agent({ connect: { rejectUnauthorized: false } });
@@ -18,7 +26,7 @@ async function getInsecureAgent() {
       insecureAgent = null; // undici unavailable — fall back to default TLS
     }
   }
-  return isInsecureTls() ? insecureAgent : undefined;
+  return insecureAgent ?? undefined;
 }
 
 export interface GithubUser {

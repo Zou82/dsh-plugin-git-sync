@@ -60,7 +60,7 @@ export function registerGitStatus(ctx: Ctx): void {
         const token = await resolveToken(ctx);
         const branch = await currentBranch(cwd, token, config.auth.method);
         const remoteUrl = await getRemoteUrl(cwd, token, config.auth.method);
-        const { ahead, behind } = await aheadBehind(cwd, token, config.auth.method);
+        const { ahead, behind } = await aheadBehind(cwd, token, config.auth.method, branch);
         const status = await statusPorcelain(cwd, token, config.auth.method);
         const state = await new ProjectStateStore(cwd).load();
         return {

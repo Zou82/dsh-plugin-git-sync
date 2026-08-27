@@ -3,6 +3,23 @@
 本插件所有显著变更。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [0.5.1] - 2026-08-27
+
+### 修复
+- **git_sync 的 include 参数实现落地**：此前仅声明未实现；现按「路径前缀（含子目录）或裸文件名」定向 `git add -- <paths>`，敏感文件/大文件检查与 files_changed 同步限定在该范围内，无匹配时返回明确提示
+- **porcelain 解析重写**：改用 `git status --porcelain=v1 -z` 按 NUL 解析——中文/空格文件名不再变成 C 转义形式；重命名条目取新路径而非「旧 -> 新」字符串，修复大文件检查静默跳过与提交摘要失真
+- **三条同步路径互斥**：新增工作区级锁串行化 git_sync / 回合结束兜底 / 文件监听，消除并发 add-commit-pull-push 交错导致的 index.lock 冲突与空提交报错
+- **自动同步大文件守卫**：回合结束与文件监听同步复用 oversizedFiles 检查，超限跳过并告警，避免超过 GitHub 上限的文件卡死后续所有推送
+- **插件卸载资源清理**：dispose 时关闭全部 fs.watch 句柄、防抖定时器与轮询 interval，不再泄漏
+- **后台 rebase 冲突自愈**：pull --rebase 冲突时自动 `rebase --abort`（autostash 自动恢复本地改动），仓库不再卡在半途 rebase 态
+- **网络命令硬超时**：pull/push 增加 10 分钟兜底超时，挂起时终止进程并给出明确错误（原 timeoutMs 机制从未被启用）
+- **insecureTls 回退修复**：undici 导入失败时回退默认 TLS 校验栈，不再把 `dispatcher: null` 传给 fetch 导致全部请求异常
+- **后台推送统一带 -u**：无上游配置的分支也能被自动同步首次推送，不再每轮静默失败
+- **ahead/behind 兜底修正**：无 upstream 时回退比较 origin/<branch>，仍不可得则将本地历史计为 ahead——未推送的新分支不再显示「已同步」
+- 设置卡片补上缺失的 `fileWatcher.pollMs` 字段（此前仅 host 配置和文档可见）
+- 提交摘要 describeFiles 按实际文件去重（部分暂存且继续修改的文件不再重复计数）
+- 新增 `scripts/smoke-fixes.mjs` 功能冒烟测试（解析器单测 + 真实仓库场景）
+
 ## [0.5.0] - 2026-08-27
 
 ### 新增

@@ -9,6 +9,9 @@ import { git, gitAuth, GitError, runGit } from "./runner.js";
  * All network operations go through gitAuth() for credential injection.
  */
 
+/** Hard ceiling for network git commands — protects against hung transports. */
+export const NETWORK_TIMEOUT_MS = 600_000;
+
 export interface StatusLines {
   staged: string[];
   unstaged: string[];
@@ -122,25 +125,51 @@ export async function setRemoteUrl(
   }
 }
 
-/** Parse `git status --porcelain=v1` into grouped path lists. */
+/**
+ * Pure parser for `git status --porcelain=v1 -z` output.
+ *
+ * -z is used deliberately over plain porcelain: paths are NUL-separated and
+ * never quoted, so non-ASCII (中文) filenames arrive as raw UTF-8 instead of
+ * C-escaped octal, and rename/copy records are unambiguous. Rename records
+ * carry `XY<space><to>` followed by a second NUL-delimited field with the
+ * original path; we keep the new path only.
+ *
+ * Same classification as the previous quoted format: first column marks
+ * staged (index) state, second column unstaged (worktree) state. Unmerged
+ * pairs (UU/AA/...) legitimately land in both buckets.
+ */
+export function parseStatusZ(stdout: string): StatusLines {
+  const staged: string[] = [];
+  const unstaged: string[] = [];
+  const untracked: string[] = [];
+  const fields = stdout.split("\0");
+  for (let i = 0; i < fields.length; i++) {
+    const record = fields[i];
+    // Trailing NUL / empty separators — skip. A record needs "XY " at least.
+    if (!record || record.length < 4) continue;
+    const xy = record.slice(0, 2);
+    const path = record.slice(3);
+    if (xy === "??") {
+      untracked.push(path);
+      continue;
+    }
+    // Rename/copy: an extra NUL-delimited field follows with the old name.
+    if ((xy[0] === "R" || xy[0] === "C") && xy[1] === " ") i++;
+    if (xy[0] !== " " && xy[0] !== "?") staged.push(path);
+    if (xy[1] !== " ") unstaged.push(path);
+  }
+  return { staged, unstaged, untracked };
+}
+
+/** Parse `git status --porcelain=v1 -z` output for cwd. */
 export async function statusPorcelain(
   cwd: string,
   token: string | undefined,
   authMethod: AuthMethod,
 ): Promise<StatusLines> {
-  const result = await git(["status", "--porcelain=v1"], baseOptions(cwd, token, authMethod));
-  const staged: string[] = [];
-  const unstaged: string[] = [];
-  const untracked: string[] = [];
-  for (const line of result.stdout.split("\n")) {
-    if (!line) continue;
-    const xy = line.slice(0, 2);
-    const path = line.slice(3).replace(/^"(.*)"$/, "$1");
-    if (xy === "??") untracked.push(path);
-    else if (xy[0] !== " " && xy[0] !== "?") staged.push(path);
-    if (xy[1] !== " ") unstaged.push(path);
-  }
-  return { staged, unstaged, untracked };
+  const result = await runGit(["status", "--porcelain=v1", "-z"], baseOptions(cwd, token, authMethod));
+  if (result.code !== 0) return { staged: [], unstaged: [], untracked: [] };
+  return parseStatusZ(result.stdout);
 }
 
 export async function addAll(
@@ -149,6 +178,20 @@ export async function addAll(
   authMethod: AuthMethod,
 ): Promise<void> {
   await git(["add", "-A"], baseOptions(cwd, token, authMethod));
+}
+
+/**
+ * Stage only the given pathspecs (`git add -- <paths>…`), used by git_sync's
+ * `include` parameter. Empty input is a no-op so callers can branch freely.
+ */
+export async function addPaths(
+  cwd: string,
+  token: string | undefined,
+  authMethod: AuthMethod,
+  paths: string[],
+): Promise<void> {
+  if (paths.length === 0) return;
+  await git(["add", "--", ...paths], baseOptions(cwd, token, authMethod));
 }
 
 /**
@@ -194,13 +237,40 @@ export async function revParseHead(
   return result.stdout.trim();
 }
 
-/** pull --rebase; throws GitError(conflict: true) on conflicts. */
+/**
+ * pull --rebase; throws GitError(conflict: true) on conflicts.
+ * Network commands get a hard timeout so a hung transport cannot wedge the
+ * calling tool turn (or a lifecycle hook) forever.
+ */
 export async function pullRebase(
   cwd: string,
   token: string | undefined,
   authMethod: AuthMethod,
 ): Promise<void> {
-  await gitAuth(["pull", "--rebase", "--autostash"], baseOptions(cwd, token, authMethod));
+  await gitAuth(["pull", "--rebase", "--autostash"], {
+    ...baseOptions(cwd, token, authMethod),
+    timeoutMs: NETWORK_TIMEOUT_MS,
+  });
+}
+
+/**
+ * Best-effort `rebase --abort` after a conflicted background pull.
+ * Safe: abort restores HEAD to the pre-rebase state and automatically
+ * re-applies the autostash created by pull --autostash. Returns whether an
+ * in-progress rebase was actually aborted.
+ */
+export async function abortRebaseSafe(
+  cwd: string,
+  token: string | undefined,
+  authMethod: AuthMethod,
+): Promise<boolean> {
+  try {
+    await git(["rebase", "--abort"], baseOptions(cwd, token, authMethod));
+    return true;
+  } catch {
+    // No rebase in progress or nothing to restore — nothing to clean up.
+    return false;
+  }
 }
 
 /** push [-u] origin <branch>. */
@@ -214,47 +284,88 @@ export async function push(
   const args = ["push"];
   if (setUpstream) args.push("-u");
   args.push("origin", branch);
-  await gitAuth(args, baseOptions(cwd, token, authMethod));
+  await gitAuth(args, { ...baseOptions(cwd, token, authMethod), timeoutMs: NETWORK_TIMEOUT_MS });
 }
 
-/** Ahead/behind vs upstream; -1 when no upstream configured. */
+/**
+ * Ahead/behind vs upstream; when no upstream is configured the counts fall
+ * back to comparing against origin/<branch>, and finally degrade to "every
+ * local commit is ahead" — so an unpushed branch no longer reports the
+ * misleading clean {0,0} (which remains only for unborn/unreadable HEAD).
+ */
 export async function aheadBehind(
   cwd: string,
   token: string | undefined,
   authMethod: AuthMethod,
+  branch?: string,
 ): Promise<{ ahead: number; behind: number }> {
   const opts = baseOptions(cwd, token, authMethod);
-  const aheadResult = await runGit(["rev-list", "--count", "@{u}..HEAD"], opts);
-  const behindResult = await runGit(["rev-list", "--count", "HEAD..@{u}"], opts);
-  if (aheadResult.code !== 0 || behindResult.code !== 0) return { ahead: 0, behind: 0 };
-  return {
-    ahead: Number(aheadResult.stdout.trim()) || 0,
-    behind: Number(behindResult.stdout.trim()) || 0,
-  };
+  const upstreamAhead = await runGit(["rev-list", "--count", "@{u}..HEAD"], opts);
+  const upstreamBehind = await runGit(["rev-list", "--count", "HEAD..@{u}"], opts);
+  if (upstreamAhead.code === 0 && upstreamBehind.code === 0) {
+    return {
+      ahead: Number(upstreamAhead.stdout.trim()) || 0,
+      behind: Number(upstreamBehind.stdout.trim()) || 0,
+    };
+  }
+
+  // No upstream configured — try origin/<branch> (set by earlier -u pushes).
+  if (branch && /^[A-Za-z0-9._/-]+$/.test(branch)) {
+    const remoteRef = `origin/${branch}`;
+    const remoteAhead = await runGit(["rev-list", "--count", `${remoteRef}..HEAD`], opts);
+    const remoteBehind = await runGit(["rev-list", "--count", `HEAD..${remoteRef}`], opts);
+    if (remoteAhead.code === 0 && remoteBehind.code === 0) {
+      return {
+        ahead: Number(remoteAhead.stdout.trim()) || 0,
+        behind: Number(remoteBehind.stdout.trim()) || 0,
+      };
+    }
+  }
+
+  // Last resort: with no remote reference at all every local commit is ahead.
+  const localCount = await runGit(["rev-list", "--count", "HEAD"], opts);
+  if (localCount.code === 0) {
+    return { ahead: Number(localCount.stdout.trim()) || 0, behind: 0 };
+  }
+  return { ahead: 0, behind: 0 };
 }
 
 /** Files to be committed that match known secret patterns. */
+export function isSecretPath(path: string): boolean {
+  return SECRET_PATTERNS.some((pattern) => pattern.test(path));
+}
+
+/** Files among staged+untracked that match known secret patterns. */
 export async function scanForSecrets(
   cwd: string,
   token: string | undefined,
   authMethod: AuthMethod,
 ): Promise<string[]> {
   const { staged, untracked } = await statusPorcelain(cwd, token, authMethod);
-  return [...staged, ...untracked].filter((path) =>
-    SECRET_PATTERNS.some((pattern) => pattern.test(path)),
-  );
+  return [...staged, ...untracked].filter(isSecretPath);
 }
 
-/** Files about to be committed whose size exceeds maxSizeMb. */
+/**
+ * Files whose size exceeds maxSizeMb. Pass an explicit candidate list (the
+ * already-known about-to-be-committed paths) to avoid a second status query;
+ * without one, staged+untracked are checked as before.
+ */
 export async function oversizedFiles(
   cwd: string,
   token: string | undefined,
   authMethod: AuthMethod,
   maxSizeMb: number,
+  candidates?: string[],
 ): Promise<Array<{ path: string; sizeMb: number }>> {
-  const { staged, untracked } = await statusPorcelain(cwd, token, authMethod);
+  let paths: string[];
+  if (candidates) {
+    paths = candidates;
+  } else {
+    const { staged, untracked } = await statusPorcelain(cwd, token, authMethod);
+    paths = [...staged, ...untracked];
+  }
   const found: Array<{ path: string; sizeMb: number }> = [];
-  for (const path of [...staged, ...untracked]) {
+  for (const path of paths) {
     try {
       const info = await stat(join(cwd, path));
       const sizeMb = info.size / (1024 * 1024);

@@ -21,6 +21,8 @@ export interface RunResult {
   code: number;
   stdout: string;
   stderr: string;
+  /** True when the process was killed by the configured timeoutMs. */
+  timedOut?: boolean;
 }
 
 /** Typed git failure; stderr/stdout are already token-masked. */
@@ -100,6 +102,7 @@ export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
     });
     let stdout = "";
     let stderr = "";
+    let timedOut = false;
     child.stdout.on("data", (chunk: Buffer) => {
       stdout += chunk.toString("utf8");
     });
@@ -107,7 +110,10 @@ export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
       stderr += chunk.toString("utf8");
     });
     const timer = opts.timeoutMs
-      ? setTimeout(() => child.kill(), opts.timeoutMs)
+      ? setTimeout(() => {
+          timedOut = true;
+          child.kill();
+        }, opts.timeoutMs)
       : undefined;
     child.on("error", (error) => {
       if (timer) clearTimeout(timer);
@@ -121,6 +127,7 @@ export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
         code: code ?? -1,
         stdout: maskToken(stdout, opts.token),
         stderr: maskToken(stderr, opts.token),
+        ...(timedOut ? { timedOut: true } : {}),
       });
     });
   });
@@ -133,17 +140,17 @@ export function runGit(args: string[], opts: RunOptions): Promise<RunResult> {
 export async function git(args: string[], opts: RunOptions): Promise<RunResult> {
   const result = await runGit(args, opts);
   if (result.code !== 0) {
+    // A killed-by-timeout process reports an opaque exit code / empty stderr:
+    // surface the actual cause instead of "失败 (exit -1)".
+    const message = result.timedOut
+      ? `git ${args[0]} 超时（${opts.timeoutMs}ms），已终止进程`
+      : result.stderr.trim() || `git ${args[0]} 失败 (exit ${result.code})`;
     const conflict =
+      !result.timedOut &&
       /CONFLICT|conflict|Automatic merge failed|pull is not possible|have diverged/i.test(
         result.stderr + result.stdout,
       );
-    throw new GitError(
-      result.stderr.trim() || `git ${args[0]} 失败 (exit ${result.code})`,
-      args.join(" "),
-      result.code,
-      result.stderr,
-      conflict,
-    );
+    throw new GitError(message, args.join(" "), result.code, result.stderr, conflict);
   }
   return result;
 }

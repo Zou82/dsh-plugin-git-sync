@@ -7,7 +7,12 @@ import type { StatusLines } from "./ops.js";
  * as the default when git_sync is called without an explicit message.
  */
 export function describeFiles(status: StatusLines, maxFiles = 3): string {
-  const names = [...status.staged, ...status.unstaged, ...status.untracked];
+  // A file can appear in several buckets at once (e.g. partially staged and
+  // further modified); deduplicate so the summary counts real files.
+  const seen = new Set<string>();
+  const names = [...status.staged, ...status.unstaged, ...status.untracked].filter((name) =>
+    seen.has(name) ? false : seen.add(name),
+  );
   if (names.length === 0) return "chore: auto-sync";
   const shown = names.slice(0, maxFiles).map((name) => name.split(/[\\/]/).pop() ?? name);
   const extra = names.length > maxFiles ? `, +${names.length - maxFiles} more` : "";

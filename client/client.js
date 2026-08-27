@@ -388,6 +388,7 @@ window.__ModuleLoader__.load({
               { value: false, labelKey: 'disabled' }
             ]),
             numberField('fileWatcher.debounceMs', ['fileWatcher', 'debounceMs']),
+            numberField('fileWatcher.pollMs', ['fileWatcher', 'pollMs']),
             listField('fileWatcher.ignore', ['fileWatcher', 'ignore'])
           ],
           [{
@@ -406,7 +407,7 @@ window.__ModuleLoader__.load({
           'github.insecureTls', 'auth.method', 'commit.conventional', 'git.committerName', 'git.committerEmail',
           'autoSync', 'askBeforeInit', 'init.createGitignore', 'init.initialCommitMessage',
           'safety.scanForSecrets', 'safety.maxFileSizeMb',
-          'fileWatcher.enabled', 'fileWatcher.debounceMs', 'fileWatcher.ignore'];
+          'fileWatcher.enabled', 'fileWatcher.debounceMs', 'fileWatcher.pollMs', 'fileWatcher.ignore'];
         for (var i = 0; i < ids.length; i++) fields[ids[i]] = this.form.field(ids[i]);
         return {
           ...this.form.shell(),
@@ -629,6 +630,12 @@ window.__ModuleLoader__.load({
                 ...state['fileWatcher.debounceMs'],
                 onEdit: function (v) { props.edit('fileWatcher.debounceMs', v); },
                 onReset: function () { props.resetField('fileWatcher.debounceMs'); } }),
+              jsx.jsx(ValueField, { id: 'gs-poll', label: t('pollLabel'), hint: t('pollHint'),
+                overriddenLabel: t('overridden'), resetLabel: t('reset'), invalidLabel: t('invalidNumber'),
+                numeric: true, disabled: !state.writable,
+                ...state['fileWatcher.pollMs'],
+                onEdit: function (v) { props.edit('fileWatcher.pollMs', v); },
+                onReset: function () { props.resetField('fileWatcher.pollMs'); } }),
               jsx.jsx(ValueField, { id: 'gs-watch-ignore', label: t('fileWatcherIgnoreLabel'), hint: t('fileWatcherIgnoreHint'),
                 overriddenLabel: t('overridden'), resetLabel: t('reset'), disabled: !state.writable,
                 ...state['fileWatcher.ignore'],
@@ -686,6 +693,8 @@ window.__ModuleLoader__.load({
       fileWatcherHint: 'Auto commit+push when files change; ignores .git/node_modules (needs auto-sync on).',
       debounceLabel: 'Debounce (ms)',
       debounceHint: 'Wait after the last change before syncing.',
+      pollLabel: 'Polling fallback (ms)',
+      pollHint: 'Interval used when fs.watch is unavailable (lightweight status checks).',
       fileWatcherIgnoreLabel: 'Ignore segments',
       fileWatcherIgnoreHint: 'Comma-separated directory/file names to skip (dist, build, __pycache__, ...).',
       private: 'Private', public: 'Public', enabled: 'Enabled', disabled: 'Disabled',
@@ -735,6 +744,8 @@ window.__ModuleLoader__.load({
       fileWatcherHint: '文件变化后自动提交推送；忽略 .git/node_modules（需开启自动同步）。',
       debounceLabel: '防抖（毫秒）',
       debounceHint: '最后一次变化后等待多久再同步。',
+      pollLabel: '轮询回退（毫秒）',
+      pollHint: '监听不可用时的轻量状态检查间隔。',
       fileWatcherIgnoreLabel: '忽略的目录/文件',
       fileWatcherIgnoreHint: '逗号分隔，监听时跳过的目录或文件名（如 dist, build, __pycache__）。',
       private: '私有', public: '公开', enabled: '启用', disabled: '禁用',
