@@ -22,8 +22,8 @@
  */
 import { execFileSync } from "node:child_process";
 import { copyFileSync, existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 import { join } from "node:path";
-import { tmpdir } from "node:os";
 import { setInsecureTls } from "../lib/tls.js";
 
 setInsecureTls(true);
@@ -39,12 +39,12 @@ const BRANCH = `add-${REPO}`;
 
 const AWESOME_CHECKOUT =
   process.env.AWESOME_CHECKOUT ??
-  "C:/Users/13708/Downloads/awesome-dsh-plugin-main/awesome-dsh-plugin-main";
+  join(homedir(), "Downloads", "awesome-dsh-plugin-main", "awesome-dsh-plugin-main");
 
 // ---- token ----
 function tokenFromCredentials() {
   try {
-    const text = readFileSync("C:/Users/13708/.dsh/.credentials.yaml", "utf8");
+    const text = readFileSync(join(homedir(), ".dsh", ".credentials.yaml"), "utf8");
     const m = /^\s*GITHUB_TOKEN:\s*(\S+)/m.exec(text);
     return m ? m[1] : undefined;
   } catch {
