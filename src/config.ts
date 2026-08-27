@@ -45,6 +45,14 @@ const ConfigSchema = z.object({
       .description("提交作者邮箱；留空则用 GitHub noreply 邮箱 <用户名>@users.noreply.github.com"),
   }),
 
+  // Commit conventions
+  commit: z.object({
+    conventional: z
+      .boolean()
+      .default(true)
+      .description("引导 agent 使用 Conventional Commits 提交信息（feat/fix/chore(scope): summary）"),
+  }),
+
   // Sync strategy
   autoSync: z
     .union([z.const(true), z.const(false), z.const("ask")])
@@ -63,6 +71,14 @@ const ConfigSchema = z.object({
       .number()
       .default(1500)
       .description("连续变化后的防抖等待毫秒数（合并一次编辑为一次同步）"),
+    ignore: z
+      .array(z.string())
+      .default(["dist", "build", "__pycache__", ".venv", "venv", ".idea", ".vscode"])
+      .description("额外忽略的目录/文件名（按路径片段匹配；.git/.dsh-git-sync/node_modules 始终忽略）"),
+    pollMs: z
+      .number()
+      .default(5000)
+      .description("监听不可用时的轮询回退间隔（轻量 git status 检查，不扫描文件内容）"),
   }),
 
   askBeforeInit: z
@@ -105,10 +121,15 @@ export type Config = {
     committerName: string;
     committerEmail: string;
   };
+  commit: {
+    conventional: boolean;
+  };
   autoSync: true | false | "ask";
   fileWatcher: {
     enabled: boolean;
     debounceMs: number;
+    ignore: string[];
+    pollMs: number;
   };
   askBeforeInit: boolean;
   init: {

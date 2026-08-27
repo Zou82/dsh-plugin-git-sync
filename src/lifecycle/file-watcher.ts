@@ -12,6 +12,7 @@ import {
   statusPorcelain,
 } from "../git/ops.js";
 import { resolveIdentity } from "../git/identity.js";
+import { describeFiles } from "../git/message.js";
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 import { sessionWorkspaceCwd, type Ctx } from "../types.js";
@@ -33,10 +34,14 @@ import { sessionWorkspaceCwd, type Ctx } from "../types.js";
 const watchers = new Map<string, FSWatcher>();
 const pending = new Map<string, ReturnType<typeof setTimeout>>();
 
-const IGNORED_SEGMENTS = new Set([".git", ".dsh-git-sync", "node_modules"]);
+const ALWAYS_IGNORED = new Set([".git", ".dsh-git-sync", "node_modules"]);
 
 function shouldIgnore(relative: string): boolean {
-  return relative.split(/[\\/]/).some((segment) => IGNORED_SEGMENTS.has(segment));
+  const segments = relative.split(/[\\/]/);
+  if (segments.some((segment) => ALWAYS_IGNORED.has(segment))) return true;
+  // Y1: user-configured ignore segments (dist/, build/, __pycache__, ...)
+  const extra = getRuntimeConfig().fileWatcher.ignore ?? [];
+  return segments.some((segment) => extra.includes(segment));
 }
 
 export function registerFileWatcher(ctx: Ctx): void {
@@ -54,8 +59,29 @@ export function registerFileWatcher(ctx: Ctx): void {
       watchers.set(cwd, watcher);
       ctx.logger.info("git-sync: 已开始监听工作区文件变化（%s）", cwd);
     } catch (error) {
-      // e.g. ENOENT (dir not ready) or unsupported recursive watch on Linux
-      ctx.logger.warn("git-sync: 文件监听启动失败（%s）", cwd, error);
+      // Y2: fs.watch unavailable (Linux non-recursive, ENOENT, ...) — fall back
+      // to a lightweight poll of `git status` (never scans file contents).
+      ctx.logger.warn("git-sync: 文件监听不可用，改用轮询回退（%s）", cwd, error);
+      const poll = () => {
+        void (async () => {
+          try {
+            const config = getRuntimeConfig();
+            if (!config.fileWatcher.enabled || config.autoSync !== true) return;
+            if (!(await hasRepo(cwd))) return;
+            const token = await resolveToken(ctx);
+            if (!token) return;
+            const status = await statusPorcelain(cwd, token, config.auth.method);
+            const changed =
+              status.staged.length + status.unstaged.length + status.untracked.length;
+            if (changed > 0) scheduleSync(ctx, cwd);
+          } catch {
+            // transient — next tick retries
+          }
+        })();
+      };
+      const pollMs = getRuntimeConfig().fileWatcher.pollMs;
+      const poller = setInterval(poll, pollMs);
+      watchers.set(cwd, poller as unknown as FSWatcher); // reuse the dedupe map
     }
   });
 }
@@ -105,7 +131,7 @@ async function runSync(ctx: Ctx, cwd: string): Promise<void> {
       cwd,
       token,
       config.auth.method,
-      "chore: auto-sync",
+      describeFiles(status), // R2: descriptive message with file summary
       resolveIdentity(config, config.github.username || undefined),
     );
     await pullRebase(cwd, token, config.auth.method);

@@ -94,6 +94,19 @@ window.__ModuleLoader__.load({
         }
       };
     }
+    // list: a comma-separated text box that stores an array of strings.
+    function listField(id, path) {
+      return {
+        id: id,
+        path: path,
+        kind: 'list',
+        format: function (value) { return Array.isArray(value) ? value.join(', ') : (value === void 0 || value === null ? '' : String(value)); },
+        parse: function (text) {
+          var items = text.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+          return items.length > 0 ? { kind: 'set', value: items } : { kind: 'clear' };
+        }
+      };
+    }
     // choice: options is an array of { value, labelKey } — labels come from locale.
     function choiceField(id, path, options) {
       return {
@@ -345,6 +358,10 @@ window.__ModuleLoader__.load({
               { value: 'extraheader', labelKey: 'extraheader' },
               { value: 'askpass', labelKey: 'askpass' }
             ]),
+            choiceField('commit.conventional', ['commit', 'conventional'], [
+              { value: true, labelKey: 'enabled' },
+              { value: false, labelKey: 'disabled' }
+            ]),
             textField('git.committerName', ['git', 'committerName']),
             textField('git.committerEmail', ['git', 'committerEmail']),
             choiceField('autoSync', ['autoSync'], [
@@ -370,7 +387,8 @@ window.__ModuleLoader__.load({
               { value: true, labelKey: 'enabled' },
               { value: false, labelKey: 'disabled' }
             ]),
-            numberField('fileWatcher.debounceMs', ['fileWatcher', 'debounceMs'])
+            numberField('fileWatcher.debounceMs', ['fileWatcher', 'debounceMs']),
+            listField('fileWatcher.ignore', ['fileWatcher', 'ignore'])
           ],
           [{
             id: 'token',
@@ -385,10 +403,10 @@ window.__ModuleLoader__.load({
       GitSyncCardController.prototype.projection = function () {
         var fields = {};
         var ids = ['token', 'github.username', 'github.visibility', 'github.defaultBranch',
-          'github.insecureTls', 'auth.method', 'git.committerName', 'git.committerEmail',
+          'github.insecureTls', 'auth.method', 'commit.conventional', 'git.committerName', 'git.committerEmail',
           'autoSync', 'askBeforeInit', 'init.createGitignore', 'init.initialCommitMessage',
           'safety.scanForSecrets', 'safety.maxFileSizeMb',
-          'fileWatcher.enabled', 'fileWatcher.debounceMs'];
+          'fileWatcher.enabled', 'fileWatcher.debounceMs', 'fileWatcher.ignore'];
         for (var i = 0; i < ids.length; i++) fields[ids[i]] = this.form.field(ids[i]);
         return {
           ...this.form.shell(),
@@ -554,6 +572,11 @@ window.__ModuleLoader__.load({
                 field: state['auth.method'],
                 onEdit: function (v) { props.edit('auth.method', v); },
                 onReset: function () { props.resetField('auth.method'); } }),
+              jsx.jsx(ChoiceField, { id: 'gs-conventional', label: t('commitConventionalLabel'), hint: t('commitConventionalHint'),
+                overriddenLabel: t('overridden'), resetLabel: t('reset'), disabled: !state.writable, t: t,
+                field: state['commit.conventional'],
+                onEdit: function (v) { props.edit('commit.conventional', v); },
+                onReset: function () { props.resetField('commit.conventional'); } }),
               jsx.jsx(ValueField, { id: 'gs-committer-name', label: t('committerNameLabel'), hint: t('committerNameHint'),
                 overriddenLabel: t('overridden'), resetLabel: t('reset'), disabled: !state.writable,
                 ...state['git.committerName'],
@@ -606,6 +629,11 @@ window.__ModuleLoader__.load({
                 ...state['fileWatcher.debounceMs'],
                 onEdit: function (v) { props.edit('fileWatcher.debounceMs', v); },
                 onReset: function () { props.resetField('fileWatcher.debounceMs'); } }),
+              jsx.jsx(ValueField, { id: 'gs-watch-ignore', label: t('fileWatcherIgnoreLabel'), hint: t('fileWatcherIgnoreHint'),
+                overriddenLabel: t('overridden'), resetLabel: t('reset'), disabled: !state.writable,
+                ...state['fileWatcher.ignore'],
+                onEdit: function (v) { props.edit('fileWatcher.ignore', v); },
+                onReset: function () { props.resetField('fileWatcher.ignore'); } }),
               state.failed ? jsx.jsx('p', { className: 'gs-failed', role: 'status', children: t('saveFailed') }) : null,
               jsx.jsxs('div', { className: 'gs-footer', children: [
                 jsx.jsx('button', { type: 'button', className: 'gs-discard', disabled: !state.dirty || state.saving,
@@ -636,6 +664,8 @@ window.__ModuleLoader__.load({
       insecureTlsHint: 'Enable only when your machine has a broken TLS chain (interception).',
       authMethodLabel: 'git credential injection',
       authMethodHint: 'extraheader (recommended) or askpass.',
+      commitConventionalLabel: 'Conventional Commits',
+      commitConventionalHint: 'Guide the agent to use feat/fix/chore(scope): summary commit messages.',
       committerNameLabel: 'Commit author name',
       committerNameHint: 'Blank uses the GitHub username.',
       committerEmailLabel: 'Commit author email',
@@ -656,6 +686,8 @@ window.__ModuleLoader__.load({
       fileWatcherHint: 'Auto commit+push when files change; ignores .git/node_modules (needs auto-sync on).',
       debounceLabel: 'Debounce (ms)',
       debounceHint: 'Wait after the last change before syncing.',
+      fileWatcherIgnoreLabel: 'Ignore segments',
+      fileWatcherIgnoreHint: 'Comma-separated directory/file names to skip (dist, build, __pycache__, ...).',
       private: 'Private', public: 'Public', enabled: 'Enabled', disabled: 'Disabled',
       extraheader: 'extraheader', askpass: 'askpass', ask: 'Ask',
       overridden: 'Overridden', reset: 'Reset to default', readOnly: 'This deployment stores settings read-only.',
@@ -681,6 +713,8 @@ window.__ModuleLoader__.load({
       insecureTlsHint: '仅当本机 TLS 证书链异常（被拦截）时开启。',
       authMethodLabel: 'git 凭据注入方式',
       authMethodHint: 'extraheader（推荐）或 askpass。',
+      commitConventionalLabel: 'Conventional Commits',
+      commitConventionalHint: '引导 agent 使用 feat/fix/chore(scope): summary 格式的提交信息。',
       committerNameLabel: '提交作者名',
       committerNameHint: '留空使用 GitHub 用户名。',
       committerEmailLabel: '提交作者邮箱',
@@ -701,6 +735,8 @@ window.__ModuleLoader__.load({
       fileWatcherHint: '文件变化后自动提交推送；忽略 .git/node_modules（需开启自动同步）。',
       debounceLabel: '防抖（毫秒）',
       debounceHint: '最后一次变化后等待多久再同步。',
+      fileWatcherIgnoreLabel: '忽略的目录/文件',
+      fileWatcherIgnoreHint: '逗号分隔，监听时跳过的目录或文件名（如 dist, build, __pycache__）。',
       private: '私有', public: '公开', enabled: '启用', disabled: '禁用',
       extraheader: 'extraheader', askpass: 'askpass', ask: '询问',
       overridden: '已覆盖', reset: '重置为默认', readOnly: '此部署的设置只读。',

@@ -11,6 +11,7 @@ import {
 } from "../git/ops.js";
 import { ProjectStateStore } from "../state/store.js";
 import { resolveIdentity } from "../git/identity.js";
+import { describeFiles } from "../git/message.js";
 import { askUser, sessionWorkspaceCwd, type Ctx } from "../types.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 
@@ -66,7 +67,7 @@ export function registerTurnEndSync(ctx: Ctx): void {
           cwd,
           token,
           config.auth.method,
-          "chore: auto-sync",
+          describeFiles(status),
           resolveIdentity(config, config.github.username || undefined),
         );
         await pullRebase(cwd, token, config.auth.method);

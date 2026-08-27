@@ -3,6 +3,8 @@ import { resolveToken } from "../github/token.js";
 import {
   addAll,
   commit,
+  conflictedFiles,
+  createBranch,
   currentBranch,
   hasRepo,
   oversizedFiles,
@@ -16,6 +18,7 @@ import { GitError } from "../git/runner.js";
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 import { resolveIdentity } from "../git/identity.js";
+import { describeFiles } from "../git/message.js";
 import { askUser, resolveWorkspaceCwd, type Ctx } from "../types.js";
 
 /**
@@ -28,7 +31,7 @@ export function registerGitSync(ctx: Ctx): void {
     defineTool({
       name: "git_sync",
       description:
-        "提交并推送当前代码变更到 GitHub 仓库（先 pull --rebase 处理远端差异，冲突时停下交用户，绝不强制推送）。每完成一轮代码修改后都应调用本工具。",
+        "提交并推送当前代码变更到 GitHub 仓库（先 pull --rebase 处理远端差异，冲突时停下交用户，绝不强制推送）。提交信息建议遵循 Conventional Commits（feat/fix/chore(scope): summary）。每完成一轮代码修改后都应调用本工具。",
       parameters: {
         commit_message: {
           type: "string",
@@ -43,6 +46,10 @@ export function registerGitSync(ctx: Ctx): void {
           type: "array",
           items: { type: "string" },
           description: "仅提交指定路径（缺省全部）",
+        },
+        create_branch: {
+          type: "string",
+          description: "基于当前 HEAD 创建新分支并切换（任务分支），然后照常提交推送",
         },
       },
       output: {
@@ -97,6 +104,18 @@ export function registerGitSync(ctx: Ctx): void {
         const changed =
           status.staged.length + status.unstaged.length + status.untracked.length;
 
+        // ---- optional task branch (Y4) ----
+        if (args.create_branch && typeof args.create_branch === "string") {
+          try {
+            await createBranch(cwd, token, config.auth.method, args.create_branch);
+          } catch (error) {
+            return {
+              status: "error",
+              reason: `创建分支失败: ${error instanceof Error ? error.message : String(error)}`,
+            };
+          }
+        }
+
         // ---- commit phase ----
         if (mode !== "push_only") {
           if (changed === 0) {
@@ -144,7 +163,7 @@ export function registerGitSync(ctx: Ctx): void {
           }
 
           const message =
-            args.commit_message?.trim() || `chore: sync ${new Date().toISOString()}`;
+            args.commit_message?.trim() || describeFiles(status);
           await addAll(cwd, token, config.auth.method);
           const hash = await commit(
             cwd,
@@ -187,11 +206,15 @@ async function pushPending(
     await pullRebase(cwd, token, config.auth.method);
   } catch (error) {
     if (error instanceof GitError && error.conflict) {
+      // Y3: list the conflicted files and give concrete recovery steps
+      const files = await conflictedFiles(cwd, token, config.auth.method).catch(() => []);
+      const fileList = files.length > 0 ? ` 冲突文件：${files.join("、")}` : "";
       return {
         status: "conflict",
         pushed: false,
         reason: "远端与本地存在冲突，已停下。请解决冲突后重新调用 git_sync",
-        needs_user_action: error.stderr.trim() || "请查看冲突文件并解决后重试",
+        needs_user_action:
+          `解决冲突后：git add <文件> → git rebase --continue，或放弃本次改动。${fileList}`,
       };
     }
     return {
@@ -203,7 +226,7 @@ async function pushPending(
 
   try {
     const branch = await currentBranch(cwd, token, config.auth.method);
-    await push(cwd, token, config.auth.method, branch);
+    await push(cwd, token, config.auth.method, branch, true); // -u: safe for both new and tracked branches
     const head = await revParseHead(cwd, token, config.auth.method);
     await state.update({ lastSyncAt: new Date().toISOString(), lastSyncedCommit: head });
     return { status: "ok", commits, files_changed: changed, pushed: true };

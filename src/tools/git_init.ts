@@ -15,11 +15,15 @@ import {
   commit,
   currentBranch,
   ensureGitignore,
+  getRemoteUrl,
   gitInit,
   hasRepo,
   isGitAvailable,
   push,
+  revParseHead,
+  statusPorcelain,
 } from "../git/ops.js";
+import { describeFiles } from "../git/message.js";
 import { ProjectStateStore } from "../state/store.js";
 import { getRuntimeConfig } from "../state/config-runtime.js";
 import { resolveIdentity } from "../git/identity.js";
@@ -87,14 +91,6 @@ export function registerGitInit(ctx: Ctx): void {
             reason: "未检测到 git：请先安装 Git（https://git-scm.com）后重试",
           };
         }
-        if (await hasRepo(cwd)) {
-          return {
-            status: "already_repo",
-            reason:
-              "工作区已是 git 仓库，跳过初始化。可用 git_status 查看状态、git_sync 同步，或 git_rename 修改 GitHub 仓库名",
-          };
-        }
-
         const token = await resolveToken(ctx);
         if (!token) {
           return {
@@ -108,6 +104,162 @@ export function registerGitInit(ctx: Ctx): void {
           owner = config.github.username || (await getUser(token)).login;
         } catch (error) {
           return { status: "error", reason: `无法获取 GitHub 账号: ${describeGithubError(error)}` };
+        }
+
+        if (await hasRepo(cwd)) {
+          // ---- R1: adopt an existing (local) git repository ----
+          const existingRemote = await getRemoteUrl(cwd, token, config.auth.method);
+          if (existingRemote) {
+            return {
+              status: "already_repo",
+              reason: `工作区已是 git 仓库且已关联远端 ${existingRemote}，可直接用 git_sync 同步；如需改名用 git_rename`,
+            };
+          }
+          let visibility = args.visibility ?? config.github.visibility;
+          if (args.ask !== false && config.askBeforeInit) {
+            const answer = await askUser(ctx, exec, {
+              id: "git-init-adopt",
+              header: "关联已有仓库",
+              question: `检测到已有 git 仓库「${basename(cwd)}」。是否关联到 GitHub（建仓并推送现有内容）？`,
+              options: [
+                {
+                  label: `创建${visibility === "public" ? "公开" : "私有"}仓库并关联 (Recommended)`,
+                  description: `以 ${visibility} 可见性建仓并推送现有代码`,
+                },
+                { label: "创建公开仓库并关联", description: "所有人可见" },
+                { label: "创建私有仓库并关联", description: "仅自己可见" },
+                { label: "暂不关联", description: "保持本地仓库不动" },
+              ],
+            });
+            const selected = answer.selected[0] ?? "";
+            if (selected.includes("暂不关联")) {
+              return { status: "skipped", reason: "用户暂不关联 GitHub" };
+            }
+            if (selected.includes("公开")) visibility = "public";
+            if (selected.includes("私有")) visibility = "private";
+          }
+          // ---- name confirm (same rules as fresh init) ----
+          const defaultName = sanitizeRepoName(args.repo_name ?? basename(cwd) ?? "project");
+          let repoName = defaultName;
+          if (args.ask !== false) {
+            const nameAnswer = await askUser(ctx, exec, {
+              id: "git-init-adopt-name",
+              header: "确认仓库名",
+              question: `仓库名将使用「${defaultName}」，是否确认？`,
+              options: [
+                { label: `使用「${defaultName}」 (Recommended)` },
+                { label: "自定义名称", description: "输入你想要的仓库名" },
+              ],
+            });
+            const custom = nameAnswer.custom?.trim();
+            if (custom) {
+              repoName = sanitizeRepoName(custom);
+            } else if ((nameAnswer.selected[0] ?? "").includes("自定义")) {
+              const textAnswer = await askUser(ctx, exec, {
+                id: "git-init-adopt-name-text",
+                header: "自定义仓库名",
+                question: "请输入你想要的仓库名：",
+              });
+              repoName = sanitizeRepoName(textAnswer.custom?.trim() ?? "");
+            }
+          }
+          if (!repoName) return { status: "error", reason: "仓库名为空，已取消关联" };
+          const invalid = validateRepoName(repoName);
+          if (invalid) return { status: "error", reason: `仓库名不合法：${invalid}` };
+          // ---- conflict handling ----
+          let finalName = repoName;
+          try {
+            if (await repoExists(token, owner, repoName)) {
+              const conflictAnswer = await askUser(ctx, exec, {
+                id: "git-init-adopt-name-conflict",
+                header: "仓库名已被占用",
+                question: `GitHub 上已存在「${owner}/${repoName}」，如何处理？`,
+                options: [
+                  { label: `改用「${repoName}-2」`, description: "自动追加序号" },
+                  { label: "换个名字", description: "重新输入仓库名" },
+                ],
+              });
+              const conflictCustom = conflictAnswer.custom?.trim();
+              if (conflictCustom) {
+                finalName = sanitizeRepoName(conflictCustom);
+              } else if ((conflictAnswer.selected[0] ?? "").includes("换个名字")) {
+                const again = await askUser(ctx, exec, {
+                  id: "git-init-adopt-conflict-text",
+                  header: "重新命名",
+                  question: "请输入新的仓库名：",
+                });
+                finalName = sanitizeRepoName(again.custom?.trim() ?? "");
+              } else {
+                finalName = `${repoName}-2`;
+              }
+              const stillInvalid = validateRepoName(finalName);
+              if (stillInvalid) {
+                return { status: "error", reason: `新名称仍不合法：${stillInvalid}` };
+              }
+              if (await repoExists(token, owner, finalName)) {
+                return {
+                  status: "error",
+                  reason: `「${owner}/${finalName}」也已被占用，请稍后重试或使用其他名称`,
+                };
+              }
+            }
+          } catch (error) {
+            return { status: "error", reason: `检查仓库名失败: ${describeGithubError(error)}` };
+          }
+          // ---- create + link + push existing content ----
+          try {
+            const repo = await createRepo(token, {
+              owner,
+              name: finalName,
+              visibility,
+              description: args.description,
+            });
+            const remoteUrl = `https://github.com/${owner}/${finalName}.git`;
+            await addRemote(cwd, token, config.auth.method, remoteUrl);
+            let hasHead = false;
+            try {
+              await revParseHead(cwd, token, config.auth.method);
+              hasHead = true;
+            } catch {
+              hasHead = false; // empty repo — will create the initial commit
+            }
+            const status = await statusPorcelain(cwd, token, config.auth.method);
+            const changed =
+              status.staged.length + status.unstaged.length + status.untracked.length;
+            if (!hasHead || changed > 0) {
+              await addAll(cwd, token, config.auth.method);
+              await commit(
+                cwd,
+                token,
+                config.auth.method,
+                changed > 0 ? describeFiles(status) : config.init.initialCommitMessage,
+                resolveIdentity(config, owner),
+              );
+            }
+            const branch = await currentBranch(cwd, token, config.auth.method);
+            await push(cwd, token, config.auth.method, branch, true);
+            await state.update({
+              repoName: finalName,
+              remoteUrl: repo.html_url,
+              visibility,
+              initDecision: "created",
+              initAskedAt: new Date().toISOString(),
+              pendingInit: false,
+              lastSyncAt: new Date().toISOString(),
+            });
+            return {
+              status: "ok",
+              repo_url: repo.html_url,
+              remote: remoteUrl,
+              branch,
+              visibility,
+            };
+          } catch (error) {
+            return {
+              status: "error",
+              reason: `GitHub 建仓或关联失败: ${error instanceof Error ? error.message : String(error)}`,
+            };
+          }
         }
 
         // ---- Q1: create the repository? ----

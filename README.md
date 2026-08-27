@@ -12,12 +12,13 @@
 
 ## 功能特性
 
-- `git_init`：询问建仓 → 确认/自定义仓库名（冲突自动建议 `name-2`）→ 本地 `git init` + GitHub 建仓 + 首次提交推送
+- `git_init`：询问建仓 → 确认/自定义仓库名（冲突自动建议 `name-2`）→ 本地 `git init` + GitHub 建仓 + 首次提交推送；**已有 git 仓库**也可一键关联到 GitHub（建仓 + remote + 推送现有内容）
 - `git_rename`：**建仓后改名**（GitHub 改名 + 本地 remote 同步 + 状态更新，旧链接 301 重定向）
-- `git_sync`：提交并推送（自动 `pull --rebase`，冲突停下交给你，**绝不 force push**）
+- `git_sync`：提交并推送（自动 `pull --rebase`，**冲突时列出冲突文件清单**并停下交给你，绝不 force push；支持 `create_branch` 任务分支）
 - `git_status`：查看同步状态（分支 / 远端 / 前后端差异 / 未提交文件）
 - 回合结束兜底自动同步（`autoSync` 可配 `true` / `false` / `"ask"`）
-- **文件监听（保存即同步）**：工作区文件一变化（保存/编辑）就自动提交推送，不再只等回合结束（可配防抖毫秒，忽略 `.git`/`node_modules`）
+- **文件监听（保存即同步）**：工作区文件一变化就自动提交推送（可配防抖毫秒、**自定义忽略规则**；`fs.watch` 不可用时自动**轮询回退**）
+- **描述性提交信息**：兜底提交带变更文件摘要；可引导 agent 使用 **Conventional Commits**（`feat/fix/chore(scope): summary`）
 - 提交前敏感文件扫描（`.env`、密钥等）、大文件告警
 - 自动设置 git 提交身份（repo-local，不动全局配置）
 
@@ -146,8 +147,11 @@ git-sync:
 | `init.initialCommitMessage` | `chore: initial commit` | 首次提交信息 |
 | `safety.scanForSecrets` | `true` | 敏感文件扫描 |
 | `safety.maxFileSizeMb` | `50` | 大文件告警阈值 |
+| `commit.conventional` | `true` | 引导 agent 使用 Conventional Commits 提交信息 |
 | `fileWatcher.enabled` | `true` | 文件监听：保存文件后自动提交推送（需 `autoSync: true`；忽略 `.git`/`node_modules`） |
 | `fileWatcher.debounceMs` | `1500` | 连续变化的防抖毫秒数（合并一次编辑为一次同步） |
+| `fileWatcher.ignore` | `dist, build, __pycache__, ...` | 额外忽略的目录/文件名（逗号分隔，按路径片段匹配） |
+| `fileWatcher.pollMs` | `5000` | 文件监听不可用时的轮询回退间隔（轻量 git status 检查） |
 
 ---
 

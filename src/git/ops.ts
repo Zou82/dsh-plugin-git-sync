@@ -266,6 +266,28 @@ export async function oversizedFiles(
   return found;
 }
 
+/** Create and switch to a new branch from the current HEAD. */
+export async function createBranch(
+  cwd: string,
+  token: string | undefined,
+  authMethod: AuthMethod,
+  name: string,
+): Promise<string> {
+  await git(["checkout", "-b", name], baseOptions(cwd, token, authMethod));
+  return name;
+}
+
+/** Files currently in a conflicted (unmerged) state. */
+export async function conflictedFiles(
+  cwd: string,
+  token: string | undefined,
+  authMethod: AuthMethod,
+): Promise<string[]> {
+  const result = await runGit(["diff", "--name-only", "--diff-filter=U"], baseOptions(cwd, token, authMethod));
+  if (result.code !== 0) return [];
+  return result.stdout.split("\n").map((line) => line.trim()).filter(Boolean);
+}
+
 /** Ensure `.dsh-git-sync/` (plugin state dir) is never committed. */
 export async function ensureGitignore(cwd: string): Promise<void> {
   const file = join(cwd, ".gitignore");
