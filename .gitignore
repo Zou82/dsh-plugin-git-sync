@@ -15,3 +15,6 @@ node_modules/
 # misc
 *.log
 debug.log
+
+# DSH runtime drops into the workspace
+.dsh/

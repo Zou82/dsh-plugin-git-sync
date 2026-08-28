@@ -100,14 +100,24 @@ if (!readFileSync(readmePath, "utf8").includes(`${OWNER}/${REPO}`)) {
   process.exit(1);
 }
 
-// ---- 3. fork ----
-const fork = await api(`/repos/${AWESOME_OWNER}/${AWESOME_REPO}/forks`, { method: "POST" });
-if (fork.status !== 202 && fork.status !== 200) {
-  console.error(`fork 失败 (${fork.status}): ${JSON.stringify(fork.body)}`);
-  process.exit(1);
+// ---- 3. fork (reuse an existing fork, otherwise create one) ----
+const existingFork = await api(`/repos/${OWNER}/${AWESOME_REPO}`);
+let forkName;
+if (existingFork.status === 200) {
+  forkName = existingFork.body.full_name;
+  console.log(`复用已有 fork: ${forkName}`);
+} else {
+  const fork = await api(`/repos/${AWESOME_OWNER}/${AWESOME_REPO}/forks`, { method: "POST" });
+  if (fork.status !== 202 && fork.status !== 200) {
+    console.error(`fork 失败 (${fork.status}): ${JSON.stringify(fork.body)}`);
+    console.error(`GitHub 风控时请先在浏览器手动 fork：`);
+    console.error(`  https://github.com/${AWESOME_OWNER}/${AWESOME_REPO}/fork`);
+    console.error(`完成后重新运行本脚本即可继续。`);
+    process.exit(1);
+  }
+  forkName = fork.body.full_name || `${OWNER}/${AWESOME_REPO}`;
+  console.log(`fork: ${forkName}`);
 }
-const forkName = fork.body.full_name || `${OWNER}/${AWESOME_REPO}`;
-console.log(`fork: ${forkName}`);
 
 // ---- 4. clone fork, add files, push branch (git CLI with token injection) ----
 const basic = Buffer.from(`x-access-token:${TOKEN}`).toString("base64");
