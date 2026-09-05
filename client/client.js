@@ -407,7 +407,17 @@ window.__ModuleLoader__.load({
         this.store = this.form.bind(function () { return this.projection(); }.bind(this));
         var self = this;
         scope.subscribe(function () { self.readCredential(); });
-        this.readCredential();
+        // Defer the first credential read past apply(): at renderer boot the
+        // remote service may not have its credentials domain ready yet, and a
+        // synchronous call would fail the whole entry (renderer boot failure).
+        setTimeout(function () {
+          try {
+            self.readCredential();
+          } catch (e) {
+            // non-fatal: the card shows "no token configured" until a scope
+            // change or credentials/reference-updated refreshes it
+          }
+        }, 0);
       }
       GitSyncCardController.prototype.projection = function () {
         var fields = {};
@@ -774,24 +784,32 @@ window.__ModuleLoader__.load({
       ctx.effect(function () {
         return ctx.locale.register(NS, { en: en, zh: zh });
       }, 'git-sync: locale dictionaries');
-      // DSH 2.0.5 writes ride ctx.remote (settings.mutate / credentials)
-      var remote = ctx.remote || ctx.get('remote');
-      var scope = ctx.settingsScope.bind({ namespace: SETTINGS_NS });
-      var describeFace = ctx.settingsScope.describe();
-      var controller = new GitSyncCardController(scope, describeFace, remote);
-      ctx.effect(function () {
-        return ctx.remote.$on('credentials/reference-updated', function (ref) {
-          controller.refreshCredential(ref);
+      // Everything below is best-effort: any failure must degrade to "no card",
+      // never take down the renderer boot (DSH 2.0.5 treats entry failures as
+      // renderer boot failures).
+      try {
+        // DSH 2.0.5 writes ride ctx.remote (settings.mutate / credentials)
+        var remote = ctx.remote || ctx.get('remote');
+        var scope = ctx.settingsScope.bind({ namespace: SETTINGS_NS });
+        var describeFace = ctx.settingsScope.describe();
+        var controller = new GitSyncCardController(scope, describeFace, remote);
+        ctx.effect(function () {
+          return ctx.remote.$on('credentials/reference-updated', function (ref) {
+            controller.refreshCredential(ref);
+          });
+        }, 'git-sync: credential invalidations');
+        ctx.slots.inject('settings.plugin.item', function* () {
+          yield ctx.slots.register({
+            name: 'settings.plugin.item',
+            key: SETTINGS_NS,
+            locale: NS,
+            inject: function () { return controller.inject(); }
+          }, GitSyncCard);
         });
-      }, 'git-sync: credential invalidations');
-      ctx.slots.inject('settings.plugin.item', function* () {
-        yield ctx.slots.register({
-          name: 'settings.plugin.item',
-          key: SETTINGS_NS,
-          locale: NS,
-          inject: function () { return controller.inject(); }
-        }, GitSyncCard);
-      });
+      } catch (error) {
+        // eslint-disable-next-line no-console
+        console.warn('git-sync: settings card registration skipped', error);
+      }
     }
 
     exports.apply = apply;
