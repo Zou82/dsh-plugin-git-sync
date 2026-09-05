@@ -31,27 +31,54 @@ export type { Config as ConfigType } from "./config.js";
  * resolved over the loader-composed base (patch/cordis.yml config). Changes
  * published by the settings service apply live via the runtime-config holder.
  *
+ * 2.0.5 hardening: the web profile's patch layer is live-reloaded, so this
+ * `apply` can run again on a fiber whose previous settings registration has
+ * not been torn down yet. `settings.register` throws on a duplicate
+ * namespace, which would fail the whole entry (and the boot). Every
+ * registration below is therefore fault-tolerant: a duplicate registration
+ * falls back to the loader-composed config instead of throwing.
+ *
  * @param ctx Cordis context (typed structurally via Ctx)
  * @param config validated schemastery config (loader composition layer)
  */
 export function apply(ctx: Ctx, config: Config): void {
-  // Register the user-editable settings namespace; GUI edits take effect live.
-  const scope = ctx.settings.register("git-sync", Config, { base: config });
-  const refresh = () => {
-    const resolved = scope.get() as Config;
-    setRuntimeConfig(resolved);
-    setInsecureTls(resolved.github.insecureTls);
-  };
-  refresh();
-  scope.watch(() => refresh());
+  // Live config: a successfully registered settings namespace overlays the
+  // loader base and hot-updates via the runtime-config holder; a duplicate
+  // registration (live patch reload) degrades to the loader config.
+  try {
+    const scope = ctx.settings.register("git-sync", Config, { base: config });
+    const refresh = () => {
+      const resolved = scope.get() as Config;
+      setRuntimeConfig(resolved);
+      setInsecureTls(resolved.github.insecureTls);
+    };
+    refresh();
+    scope.watch(() => refresh());
+  } catch (error) {
+    ctx.logger.warn(
+      "git-sync: settings 命名空间注册失败（热重载重复注册？），使用组合层配置",
+      error,
+    );
+    setRuntimeConfig(config);
+    setInsecureTls(config.github.insecureTls);
+  }
 
-  registerGitInit(ctx);
-  registerGitRename(ctx);
-  registerGitSync(ctx);
-  registerGitStatus(ctx);
-  registerProjectStart(ctx);
-  registerTurnEndSync(ctx);
-  registerFileWatcher(ctx);
+  // Each registration below is individually guarded so a single failure can
+  // never take down the whole loader tree.
+  const guarded = (label: string, fn: () => void): void => {
+    try {
+      fn();
+    } catch (error) {
+      ctx.logger.warn(`git-sync: ${label} 注册失败（已跳过，不影响启动）`, error);
+    }
+  };
+  guarded("git_init", () => registerGitInit(ctx));
+  guarded("git_rename", () => registerGitRename(ctx));
+  guarded("git_sync", () => registerGitSync(ctx));
+  guarded("git_status", () => registerGitStatus(ctx));
+  guarded("project-start", () => registerProjectStart(ctx));
+  guarded("turn-end", () => registerTurnEndSync(ctx));
+  guarded("file-watcher", () => registerFileWatcher(ctx));
 
   // Inject agent instructions (best-effort; TODO(verify) seam availability).
   try {
