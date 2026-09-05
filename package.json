@@ -1,6 +1,6 @@
 {
   "name": "dsh-plugin-git-sync",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Git + GitHub automation for DeepSeek Harness: ask-before-init repo creation (name confirmed by user, rename on demand) and auto-sync on every code update.",
   "license": "MIT",
   "type": "module",
@@ -41,7 +41,7 @@
       "inject": [
         "@deepseek-ai/dsh-client-connection",
         "@deepseek-ai/dsh-client-locale",
-        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-store",
         "@deepseek-ai/dsh-client-ui-settings",
         "@deepseek-ai/dsh-client-ui-slots",
         "@deepseek-ai/dsh-api-remotes"

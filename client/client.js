@@ -17,7 +17,8 @@ window.__ModuleLoader__.load({
 
     var React = require('react');
     var jsx = require('react/jsx-runtime');
-    var runtimeClient = require('@deepseek-ai/dsh-client-runtime/client');
+    // DSH 2.0.5 renamed dsh-client-runtime to dsh-client-store
+    var runtimeClient = require('@deepseek-ai/dsh-client-store');
 
     // Locale namespace of this browser half.
     var NS = 'dsh-plugin-git-sync';
@@ -146,10 +147,10 @@ window.__ModuleLoader__.load({
 
     // ---- form model (path-aware CardForm) ----
     var CardForm = (function () {
-      function CardForm(scope, describeFace, api, specs, secrets) {
+      function CardForm(scope, describeFace, remote, specs, secrets) {
         this.scope = scope;
         this.describeFace = describeFace;
-        this.api = api;
+        this.remote = remote;
         this.specs = new Map(specs.map(function (spec) { return [spec.id, spec]; }));
         this.secretSpecs = new Map(secrets.map(function (spec) { return [spec.id, spec]; }));
         this.staged = new Map();
@@ -299,12 +300,18 @@ window.__ModuleLoader__.load({
       };
       CardForm.prototype.mutate = function (op) {
         var snapshot = this.scope.getSnapshot();
-        return this.api.settings.mutate({
-          ns: SETTINGS_NS,
-          ops: [op],
-          ...(snapshot.revision !== void 0 ? { expectedRevision: snapshot.revision } : {})
-        }).then(function (response) {
-          return !!(response && response.result && response.result.ok);
+        // DSH 2.0.5 wire surface: ctx.remote.settings.mutate(ns, ops, revision) -> { ok, value }
+        var self = this;
+        return this.remote.settings.mutate(
+          SETTINGS_NS,
+          [op],
+          snapshot.revision !== void 0 ? snapshot.revision : void 0
+        ).then(function (response) {
+          if (!response || !response.ok) return false;
+          if (self.describeFace && typeof self.describeFace.load === 'function') {
+            self.describeFace.load().catch(function () {});
+          }
+          return true;
         }).catch(function () { return false; });
       };
       CardForm.prototype.stage = function (id, edit) {
@@ -327,22 +334,23 @@ window.__ModuleLoader__.load({
     })();
 
     // ---- credential helpers (write-only, value never rides a response) ----
-    function describeCredential(api, ref) {
-      return api.credentials.describe({ refs: [ref] }).then(function (response) {
-        if (!response || !response.result || !response.result.ok) return { configured: false, writable: true };
-        var view = response.result.value.credentials[ref];
+    function describeCredential(remote, ref) {
+      // DSH 2.0.5 wire surface: remote.credentials.describe([ref]) -> { ok, value: { [ref]: { configured, writable } } }
+      return remote.credentials.describe([ref]).then(function (response) {
+        if (!response || !response.ok) return { configured: false, writable: true };
+        var view = response.value && response.value[ref];
         return { configured: !!(view && view.configured), writable: !(view && view.writable === false) };
       }).catch(function () { return { configured: false, writable: true }; });
     }
 
     // ---- controller ----
     var GitSyncCardController = (function () {
-      function GitSyncCardController(scope, describeFace, api) {
+      function GitSyncCardController(scope, describeFace, remote) {
         this.credential = { configured: false, writable: true };
         this.form = new CardForm(
           scope,
           describeFace,
-          api,
+          remote,
           [
             textField('github.username', ['github', 'username']),
             choiceField('github.visibility', ['github', 'visibility'], [
@@ -424,7 +432,7 @@ window.__ModuleLoader__.load({
       };
       GitSyncCardController.prototype.readCredential = function () {
         var self = this;
-        describeCredential(this.form.api, TOKEN_REF).then(function (next) {
+        describeCredential(this.form.remote, TOKEN_REF).then(function (next) {
           if (next.configured === self.credential.configured && next.writable === self.credential.writable) return;
           self.credential = next;
           self.store.set(self.projection());
@@ -436,7 +444,8 @@ window.__ModuleLoader__.load({
       };
       GitSyncCardController.prototype.writeToken = function (value) {
         var self = this;
-        return this.form.api.credentials.set({ ref: TOKEN_REF, value: value })
+        // DSH 2.0.5: remote.credentials.set(ref, value)
+        return this.form.remote.credentials.set(TOKEN_REF, value)
           .then(function () { self.readCredential(); return self.credential.configured; })
           .catch(function () { return false; });
       };
@@ -765,10 +774,11 @@ window.__ModuleLoader__.load({
       ctx.effect(function () {
         return ctx.locale.register(NS, { en: en, zh: zh });
       }, 'git-sync: locale dictionaries');
-      var api = ctx.get('connection').api;
+      // DSH 2.0.5 writes ride ctx.remote (settings.mutate / credentials)
+      var remote = ctx.remote || ctx.get('remote');
       var scope = ctx.settingsScope.bind({ namespace: SETTINGS_NS });
       var describeFace = ctx.settingsScope.describe();
-      var controller = new GitSyncCardController(scope, describeFace, api);
+      var controller = new GitSyncCardController(scope, describeFace, remote);
       ctx.effect(function () {
         return ctx.remote.$on('credentials/reference-updated', function (ref) {
           controller.refreshCredential(ref);
