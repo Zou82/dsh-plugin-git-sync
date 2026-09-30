@@ -42,23 +42,36 @@ export type { Config as ConfigType } from "./config.js";
  * @param config validated schemastery config (loader composition layer)
  */
 export function apply(ctx: Ctx, config: Config): void {
-  // Live config: a successfully registered settings namespace overlays the
-  // loader base and hot-updates via the runtime-config holder; a duplicate
-  // registration (live patch reload) degrades to the loader config.
-  try {
-    const scope = ctx.settings.register("git-sync", Config, { base: config });
-    const refresh = () => {
-      const resolved = scope.get() as Config;
-      setRuntimeConfig(resolved);
-      setInsecureTls(resolved.github.insecureTls);
-    };
-    refresh();
-    scope.watch(() => refresh());
-  } catch (error) {
-    ctx.logger.warn(
-      "git-sync: settings 命名空间注册失败（热重载重复注册？），使用组合层配置",
-      error,
-    );
+  // Live config, two composition eras:
+  //  * a settings service exposing register() (0.1.x, or a tree patched to keep
+  //    the legacy seam): the user layer lives in the settings document and
+  //    hot-updates through watch();
+  //  * 0.2.x SettingsForms: register() no longer exists. The entry's Config
+  //    schema is what the Settings UI renders, an edit lands in the profile
+  //    patch, and the live loader re-applies this entry — so the composed
+  //    `config` argument is already the effective configuration.
+  const register = ctx.settings?.register;
+  if (typeof register === "function") {
+    try {
+      const scope = ctx.settings!.register!("git-sync", Config, { base: config });
+      const refresh = () => {
+        const resolved = scope.get() as Config;
+        setRuntimeConfig(resolved);
+        setInsecureTls(resolved.github.insecureTls);
+      };
+      refresh();
+      scope.watch(() => refresh());
+    } catch (error) {
+      ctx.logger.warn(
+        "git-sync: settings 命名空间注册失败（热重载重复注册？），使用组合层配置",
+        error,
+      );
+      setRuntimeConfig(config);
+      setInsecureTls(config.github.insecureTls);
+    }
+  } else {
+    // 0.2.x: composed config is the effective config; the Settings UI writes the
+    // profile patch and the live loader re-runs apply() with the new value.
     setRuntimeConfig(config);
     setInsecureTls(config.github.insecureTls);
   }

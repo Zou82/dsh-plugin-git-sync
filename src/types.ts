@@ -89,9 +89,14 @@ export interface Ctx {
       signal?: AbortSignal;
     }): Promise<{ answers: QuestionAnswer[] }>;
   };
-  /** dsh-settings: register the user-editable "git-sync" namespace. */
-  settings: {
-    register(
+  /**
+   * dsh-settings seam. Optional because 0.2.x ships SettingsForms, which has no
+   * `register()`: there the entry's Config schema is the settings surface and
+   * the composed config argument is authoritative. Older compositions (0.1.x,
+   * or a legacy-compatible build) expose `register` for a user-value overlay.
+   */
+  settings?: {
+    register?(
       ns: string,
       schema: unknown,
       options?: { base?: unknown; applies?: string; validate?: unknown },
